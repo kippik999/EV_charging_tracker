@@ -1,6 +1,7 @@
 import * as K from '../js/kpi.js';
 import { parseCsv, parseFuelio, parseFuelioDate } from '../js/fuelio.js';
 import { toCsv, makeBackup, readBackup } from '../js/backup.js';
+import * as G from '../js/geo.js';
 
 const out = document.getElementById('out');
 let pass = 0, fail = 0;
@@ -94,6 +95,17 @@ ok(readBackup(makeBackup(data, { batteryKwh: 82 })).sessions.length === 4, 'back
 let threw = false; try { readBackup('{"x":1}'); } catch { threw = true; }
 ok(threw, 'rejects a non-backup JSON');
 
+// ---- GPS ----
+const P = (lat, lon, extra = {}) => ({ lat, lon, energyKwh: 10, totalCostAud: 5, ...extra });
+near(G.distanceM({ lat: -33.8688, lon: 151.2093 }, { lat: -37.8136, lon: 144.9631 }), 713400, 2000, 'distance Sydney → Melbourne ≈ 713 km');
+ok(!G.hasCoords(P(0, 0)) && !G.hasCoords(P(null, null)) && G.hasCoords(P(-33.9, 151.2)), 'hasCoords ignores 0,0 and empty');
+const named = [P(-33.8700, 151.2000, { location: 'Evie Mall' }), P(-33.9000, 151.2000, { location: 'Home' })];
+ok(G.nearestLocationName(named, { lat: -33.8705, lon: 151.2003 }) === 'Evie Mall', 'nearest named charge within 150 m');
+ok(G.nearestLocationName(named, { lat: -33.8800, lon: 151.2000 }) === null, 'no name when nothing within 150 m');
+const places = G.groupPlaces([P(-33.87, 151.2, { location: 'A' }), P(-33.8702, 151.2001, { location: 'A' }), P(-33.8701, 151.2, { location: 'B' }), P(-33.95, 151.1), P(0, 0)]);
+ok(places.length === 2 && places[0].n === 3 && places[0].name === 'A' && places[0].kwh === 30 && places[1].name === null, 'groups charges into places', JSON.stringify(places));
+ok(toCsv([{ ...data[0], lat: -33.87, lon: 151.2 }]).includes('-33.87,151.2'), 'CSV export includes lat/lon');
+
 // ---- Real Fuelio export (only when served from the workspace with the Input folder) ----
 try {
   const res = await fetch('../../Input/EV3-1-2026-11-21_21-13.csv');
@@ -111,6 +123,9 @@ try {
   ok(f.costMismatches.length === 0, 'Fuelio: totals match kWh × price');
   ok(K.suspiciousPairs(f.sessions).length === 5, 'Fuelio: 5 odd timestamp pairs', K.suspiciousPairs(f.sessions).length);
   ok(new Set(f.sessions.map(s => s.id)).size === 55, 'Fuelio: unique ids for duplicate detection');
+  ok(f.sessions.every(s => s.lat === null && s.lon === null), 'Fuelio: 0,0 coordinates read as no position');
+  const withGps = parseFuelio(`"## Log"\n"Data","Odo (km)","kWh","Price (optional)","latitude (optional)","longitude (optional)"\n"2026-01-01 10:00","100","20","9","-33.87","151.2"\n`);
+  ok(withGps.sessions[0].lat === -33.87 && withGps.sessions[0].lon === 151.2, 'Fuelio: imports real coordinates');
 } catch (e) {
   out.insertAdjacentHTML('beforeend', `(Fuelio file test skipped: ${e.message})\n`);
 }

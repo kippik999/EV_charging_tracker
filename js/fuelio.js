@@ -63,6 +63,8 @@ export function parseFuelio(text, { dcCutoff = 0.55 } = {}) {
     city: h.find(x => /^city/i.test(x)),
     notes: h.find(x => /^notes/i.test(x)),
     guid: h.find(x => /^guid$/i.test(x)),
+    lat: h.find(x => /^latitude/i.test(x)),
+    lon: h.find(x => /^longitude/i.test(x)),
   };
   if (!col.odo || !col.kwh) throw new Error('The Log section has no odometer or kWh column.');
 
@@ -82,6 +84,8 @@ export function parseFuelio(text, { dcCutoff = 0.55 } = {}) {
     const cost = total != null ? total : round2(kwh * unit);
     if (total != null && unit > 0 && Math.abs(total - kwh * unit) > 0.05) costMismatches.push({ datetime, total, computed: round2(kwh * unit) });
     const guid = col.guid ? r[col.guid] : '';
+    const lat = col.lat ? num(r[col.lat]) : null, lon = col.lon ? num(r[col.lon]) : null;
+    const located = Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0); // Fuelio writes 0,0 for "none"
     sessions.push({
       id: 'fuelio-' + (guid || `${datetime}-${odo}`),
       datetime,
@@ -94,6 +98,9 @@ export function parseFuelio(text, { dcCutoff = 0.55 } = {}) {
       socStart: null,
       socEnd: null,
       location: col.city ? r[col.city].trim() : '',
+      lat: located ? lat : null,
+      lon: located ? lon : null,
+      gpsAccuracyM: null,
       durationMin: null,
       notes: col.notes ? r[col.notes].trim() : '',
       full: col.full ? r[col.full] === '1' : null,

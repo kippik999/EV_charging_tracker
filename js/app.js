@@ -30,5 +30,11 @@ route();
 navigator.storage?.persist?.();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  navigator.serviceWorker.register('sw.js').catch(err => console.warn('Service worker not registered', err));
+  // updateViaCache 'none': always check GitHub for a new sw.js, ignoring the browser's HTTP cache.
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(err => console.warn('Service worker not registered', err));
+  // When a new version takes over, reload once so it shows right away (not on the first install).
+  if (navigator.serviceWorker.controller) {
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded) { reloaded = true; location.reload(); } });
+  }
 }

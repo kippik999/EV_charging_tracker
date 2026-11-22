@@ -1,6 +1,7 @@
 // Add / edit a charge.
 import * as db from '../db.js';
 import { sortByOdo, learnedEfficiency, estimateKwh } from '../kpi.js';
+import { getPosition, hasCoords, nearestLocationName } from '../geo.js';
 import { esc, fmtMoney, fmtNum, fmtPct, nowLocal, readNum, toast } from '../util.js';
 
 export async function render(root, { arg }) {
@@ -45,6 +46,7 @@ export async function render(root, { arg }) {
     </div>
 
     <label>Date &amp; time<input id="dt" type="datetime-local" value="${esc(editing?.datetime ?? nowLocal())}"></label>
+    <div id="geo" class="geo" hidden><span id="geo-text"></span><button type="button" id="geo-btn" class="link"></button></div>
 
     <details ${editing && (editing.location || editing.durationMin || editing.notes) ? 'open' : ''}>
       <summary>More</summary>
@@ -110,6 +112,44 @@ export async function render(root, { arg }) {
     update();
   }));
   f.price.addEventListener('input', () => { priceTouched = true; });
+
+  // GPS position: fetched automatically for a new charge; kept as-is when editing unless changed.
+  let pos = editing && hasCoords(editing) ? { lat: editing.lat, lon: editing.lon, accuracyM: editing.gpsAccuracyM ?? null } : null;
+  let geoState = pos ? 'set' : 'none', geoMsg = '', matched = null, geoReq = 0;
+  function drawGeo() {
+    const box = $('geo');
+    box.hidden = !navigator.geolocation && !pos;
+    const acc = pos?.accuracyM != null ? ` (±${fmtNum(pos.accuracyM)} m)` : '';
+    $('geo-text').textContent = {
+      pending: '📍 Getting GPS position…',
+      set: `📍 Position saved with this charge${acc}${matched ? ` · matched “${matched}”` : ''}`,
+      none: '📍 No position',
+      error: '📍 ' + geoMsg,
+    }[geoState];
+    $('geo-btn').textContent = { pending: 'Skip', set: 'Remove', none: 'Use current position', error: 'Try again' }[geoState];
+    box.classList.toggle('warn', geoState === 'error');
+  }
+  async function locate() {
+    const req = ++geoReq;
+    geoState = 'pending'; drawGeo();
+    try {
+      const p = await getPosition();
+      if (req !== geoReq) return;
+      pos = p; geoState = 'set';
+      const name = $('loc').value.trim() ? null : nearestLocationName(others, p);
+      if (name) { $('loc').value = name; matched = name; }
+    } catch (e) {
+      if (req !== geoReq) return;
+      geoState = 'error'; geoMsg = e.message;
+    }
+    drawGeo();
+  }
+  $('geo-btn').addEventListener('click', () => {
+    if (geoState === 'pending' || geoState === 'set') { geoReq++; pos = null; matched = null; geoState = 'none'; drawGeo(); }
+    else locate();
+  });
+  drawGeo();
+  if (!editing && navigator.geolocation) locate();
   root.querySelector('form').addEventListener('input', update);
 
   root.querySelector('form').addEventListener('submit', async e => {
@@ -140,6 +180,9 @@ export async function render(root, { arg }) {
       socStart: c.soc0,
       socEnd: c.soc1,
       location: $('loc').value.trim(),
+      lat: pos?.lat ?? null,
+      lon: pos?.lon ?? null,
+      gpsAccuracyM: pos?.accuracyM ?? null,
       durationMin: dur > 0 ? dur : null,
       notes: $('notes').value.trim(),
       source: editing?.source ?? 'manual',

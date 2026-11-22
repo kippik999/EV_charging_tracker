@@ -2,6 +2,8 @@
 import * as db from '../db.js';
 import * as K from '../kpi.js';
 import { barChart, lineChart } from '../charts.js';
+import { groupPlaces, hasCoords } from '../geo.js';
+import { heatMap } from '../map.js';
 import { esc, fmtMoney, fmtNum, fmtPct, fmtPrice, monthLabel, monthShort } from '../util.js';
 
 const PERIODS = [['month', 'This month'], ['year', 'This year'], ['12m', '12 months'], ['all', 'All']];
@@ -33,6 +35,8 @@ export async function render(root) {
   const years = K.groupByYear(all);
   const locs = K.groupByLocation(segs).slice(0, 6);
   const freeSaved = sum.avgPrice != null ? sum.freeKwh * sum.avgPrice : null;
+  const places = groupPlaces(segs);
+  const located = segs.filter(hasCoords).length;
 
   const mix = K.TYPES.map(t => {
     const b = sum.byType[t];
@@ -86,7 +90,18 @@ export async function render(root) {
     <table class="years"><thead><tr><th>Year</th><th>km</th><th>kWh</th><th>Cost</th><th>$/kWh</th><th>kWh/100</th><th>$/100</th></tr></thead>
     <tbody>${years.map(y => `<tr><td>${y.key}</td><td>${fmtNum(y.distKm)}</td><td>${fmtNum(y.kwh)}</td><td>${fmtMoney(y.cost, true)}</td>
       <td>${y.avgPrice == null ? '–' : '$' + y.avgPrice.toFixed(2)}</td><td>${fmtNum(y.kwhPer100, 1)}</td><td>${fmtMoney(y.costPer100)}</td></tr>`).join('')}</tbody></table>
+  </section>
+
+  <section class="card"><h2>Where you charge</h2>
+    ${places.length ? `<div id="heatmap" class="map"></div>
+      <p class="hint">${located} of ${segs.length} charges in this period have a location${located < segs.length ? ' (older and imported charges have none)' : ''}. Zoom in and tap a dot for details.</p>`
+    : `<p class="hint">${sessions.some(hasCoords) ? 'No charges with a location in this period.' : 'New charges save their GPS position when you add them. They will show up here as a heatmap.'}</p>`}
   </section>`;
+
+  const mapEl = root.querySelector('#heatmap');
+  if (mapEl) heatMap(mapEl, places).catch(() => {
+    if (mapEl.isConnected) mapEl.outerHTML = '<p class="hint">The map could not be loaded. Check the connection and reopen the dashboard.</p>';
+  });
 
   const labels = months.map(m => monthShort(m.key));
   const full = months.map(m => monthLabel(m.key));

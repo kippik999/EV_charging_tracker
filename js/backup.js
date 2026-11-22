@@ -17,7 +17,7 @@ export function readBackup(text) {
 }
 
 const CSV_COLS = ['datetime', 'odometerKm', 'energyKwh', 'energyEstimated', 'chargerType', 'pricePerKwh', 'totalCostAud',
-  'socStart', 'socEnd', 'location', 'durationMin', 'notes', 'source'];
+  'socStart', 'socEnd', 'location', 'lat', 'lon', 'durationMin', 'notes', 'source'];
 
 export function toCsv(sessions) {
   const q = v => {
